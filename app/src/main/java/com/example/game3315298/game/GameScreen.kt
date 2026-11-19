@@ -24,14 +24,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.gestures.detectDragGestures
-
-
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import kotlin.math.abs
 
 // Definición de las clases de datos
 data class Enemy(val x: Float, val y: Float)
@@ -43,20 +43,41 @@ fun GameScreen() {
     var playerX by remember { mutableStateOf(0f) }
     var playerY by remember { mutableStateOf(0f) }
 
-    // Estado del juego
+    // Estado del juego y tamaños de pantalla
     var playerInitialized by remember { mutableStateOf(false) }
     var screenWidth by remember { mutableStateOf(0f) }
+    var screenHeight by remember { mutableStateOf(0f) }
 
-    // Estado de la puntuación y vidas
+    // Estado de la puntuación, vidas y game over
     var score by remember { mutableStateOf(0) }
     var lives by remember { mutableStateOf(3) }
+    var gameOver by remember { mutableStateOf(false) }
 
     // Estado de los enemigos
     var enemies by remember { mutableStateOf(createEnemyFormation()) }
     var enemyDirection by remember { mutableStateOf(1f) }
+    var enemySpeed by remember { mutableStateOf(5f) }
+    var enemyDropDistance by remember { mutableStateOf(20f) }
 
     // Estado de los disparos
     var bullets by remember { mutableStateOf(listOf<Bullet>()) }
+
+    // Función para restaurar valores al reiniciar
+    fun resetGame() {
+        score = 0
+        lives = 3
+        bullets = emptyList()
+        enemies = listOf(
+            Enemy(x = screenWidth * 0.25f, y = screenHeight * 0.18f),
+            Enemy(x = screenWidth * 0.50f, y = screenHeight * 0.18f),
+            Enemy(x = screenWidth * 0.75f, y = screenHeight * 0.18f)
+        )
+        enemyDirection = 1f
+        playerX = screenWidth / 2f
+        playerY = screenHeight - 80f
+        gameOver = false
+        gameStarted = true
+    }
 
     // Movimiento y eliminación de proyectiles
     LaunchedEffect(Unit) {
@@ -70,23 +91,29 @@ fun GameScreen() {
         }
     }
 
-    // Movimiento horizontal de los enemigos
+    // Movimiento horizontal y vertical de los enemigos
     LaunchedEffect(Unit) {
         while (true) {
             delay(30L)
             if (gameStarted && screenWidth > 0f && enemies.isNotEmpty()) {
                 val enemyWidth = 60f
                 val margin = enemyWidth / 2f
-                val speed = 3f
+                val speed = enemySpeed
+                val dropDistance = enemyDropDistance
 
                 val leftEdge = enemies.minOf { it.x - margin }
                 val rightEdge = enemies.maxOf { it.x + margin }
 
-                if (
-                    (enemyDirection > 0f && rightEdge + speed >= screenWidth) ||
-                    (enemyDirection < 0f && leftEdge - speed <= 0f)) {
+                val reachedEdge = (enemyDirection > 0f && rightEdge + speed >= screenWidth) ||
+                        (enemyDirection < 0f && leftEdge - speed <= 0f)
+
+                if (reachedEdge) {
                     enemyDirection *= -1f
+                    enemies = enemies.map { enemy ->
+                        enemy.copy(y = enemy.y + dropDistance)
+                    }
                 }
+
                 enemies = enemies.map { enemy ->
                     enemy.copy(x = enemy.x + (speed * enemyDirection))
                 }
@@ -94,16 +121,71 @@ fun GameScreen() {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()
-        .background(Color.Black)
-        .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally){
-    //HUD superior: puntucación y vidas
+    // Colisión enemigo, disparo y nave
+    LaunchedEffect(gameStarted) {
+        while (gameStarted) {
+            // Enemigos y proyectiles
+            val hitBullets = mutableSetOf<Bullet>()
+            val hitEnemies = mutableSetOf<Enemy>()
+            bullets.forEach { bullet ->
+                enemies.forEach { enemy ->
+                    val collisionX = abs(bullet.x - enemy.x) < 34f
+                    val collisionY = abs(bullet.y - enemy.y) < 20f
+                    if (collisionX && collisionY) {
+                        hitBullets.add(bullet)
+                        hitEnemies.add(enemy)
+                    }
+                }
+            }
+
+            if (hitBullets.isNotEmpty()) {
+                bullets = bullets.filterNot { it in hitBullets }
+                enemies = enemies.filterNot { it in hitEnemies }
+                score += hitEnemies.size * 100
+            }
+
+            // Enemigos y nave
+            val hitShip = enemies.filter { enemy ->
+                val collisionX = abs(enemy.x - playerX) < 70f
+                val collisionY = abs(enemy.y - playerY) < 50f
+                collisionX && collisionY
+            }
+
+            if (hitShip.isNotEmpty()) {
+                enemies = enemies.filterNot { it in hitShip }
+                lives = (lives - hitShip.size).coerceAtLeast(0)
+                if (lives == 0) {
+                    gameStarted = false
+                    gameOver = true
+                }
+            }
+
+            // Detectar enemigos cuando lleguen a la parte inferior de la pantalla
+            val enemiesAtBottom = enemies.filter { enemy ->
+                enemy.y + 100f >= screenHeight
+            }
+
+            if (enemiesAtBottom.isNotEmpty()) {
+                enemies = enemies.filterNot { it in enemiesAtBottom }
+            }
+
+            delay(16L)
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize()
+            .background(Color.Black)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // HUD superior: puntuación y vidas
         Row(
             modifier = Modifier.fillMaxWidth()
                 .padding(vertical = 18.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Column {
                 Text(
                     text = "SCORE",
@@ -116,14 +198,13 @@ fun GameScreen() {
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold
                 )
-
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "LIVES",
-                        color = Color.LightGray,
-                        fontSize = 12.sp,
-                    )
-                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "LIVES",
+                    color = Color.LightGray,
+                    fontSize = 12.sp,
+                )
                 Text(
                     text = "🦄".repeat(lives),
                     color = Color.Red,
@@ -132,31 +213,50 @@ fun GameScreen() {
                 )
             }
         }
-        //El título solo aparece antes de iniciar el juego
-       if(!gameStarted){
-           Text(
-               text = "SPACE SHOOTER",
-               color = Color.White,
-               fontSize = 28.sp,
-               fontWeight = FontWeight.Bold,
-               modifier = Modifier.padding(vertical = 8.dp)
-           )
-       }
-        //Escenario exclusivo del juego
-        Box(modifier = Modifier.fillMaxWidth()
-            .weight(1f)){
 
+        // El título solo aparece antes de iniciar el juego
+        if (!gameStarted) {
+            Text(
+                text = "SPACE SHOOTER",
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+        }
+
+        // Mensaje de Game Over
+        if (gameOver) {
+            Text(
+                text = "GAME OVER",
+                color = Color.Red,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                textAlign = TextAlign.Center
+            )
+        }
+
+        // Escenario exclusivo del juego
+        Box(
+            modifier = Modifier.fillMaxWidth()
+                .weight(1f)
+        ) {
             Canvas(
                 modifier = Modifier.fillMaxSize()
                     .onSizeChanged { size ->
                         screenWidth = size.width.toFloat()
+                        screenHeight = size.height.toFloat()
                         if (!playerInitialized) {
                             playerX = size.width / 2f
                             playerY = size.height - 80f
                             enemies = listOf(
-                                Enemy(size.width*0.25f, size.height*0.18f),
-                                Enemy(size.width*0.50f, size.height*0.18f),
-                                Enemy(size.width*0.75f, size.height*0.18f))
+                                Enemy(size.width * 0.25f, size.height * 0.18f),
+                                Enemy(size.width * 0.50f, size.height * 0.18f),
+                                Enemy(size.width * 0.75f, size.height * 0.18f)
+                            )
                             playerInitialized = true
                         }
                     }
@@ -164,17 +264,26 @@ fun GameScreen() {
                         detectDragGestures(
                             onDrag = { change, dragAmount ->
                                 change.consume()
-                               if(gameStarted){
-                                   val shipWidth = 80f
-                                   playerX = (playerX + dragAmount.x)
-                                       .coerceIn(shipWidth / 2f,
-                                           screenWidth - shipWidth / 2f)
-                               }
+                                if (gameStarted) {
+                                    val shipWidth = 80f
+                                    playerX = (playerX + dragAmount.x)
+                                        .coerceIn(
+                                            shipWidth / 2f,
+                                            screenWidth - shipWidth / 2f
+                                        )
+                                    playerY = (playerY + dragAmount.y)
+                                        .coerceIn(
+                                            shipWidth / 2f,
+                                            screenHeight - shipWidth / 2f
+                                        )
+                                }
                             }
                         )
-                    }) {
+                    }
+            ) {
                 drawRect(color = Color.Black)
-                //Nave del jugador
+
+                // Nave del jugador (unicornio rosa y dorado)
                 val shipWidth = 80f
                 val shipHeight = 80f
                 val left = playerX - shipWidth / 2f
@@ -239,36 +348,47 @@ fun GameScreen() {
                 }
             }
         }
-        //Controles fuera del escenario
-            Row(
-                modifier = Modifier.fillMaxWidth()
-                .padding(vertical = 30.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp,
-                   alignment = Alignment.CenterHorizontally ),
-             verticalAlignment = Alignment.CenterVertically)
-         {
-             if(!gameStarted){
-                 Button(onClick = {
-                     gameStarted = true
-                 }, modifier = Modifier.weight(1f)){
-                     Text(text = "START")
-                 }
-         }
 
-            if (gameStarted) {
-                Button(onClick = {
-                    bullets = bullets + Bullet(
-                        x = playerX,
-                        y = playerY - 40f
-                    )
-                }, modifier = Modifier.weight(1f)) {
+        // Controles fuera del escenario
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .padding(vertical = 30.dp),
+            horizontalArrangement = Arrangement.spacedBy(
+                12.dp,
+                alignment = Alignment.CenterHorizontally
+            ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (gameOver) {
+                Button(
+                    onClick = { resetGame() },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = "RESTART")
+                }
+            } else if (!gameStarted) {
+                Button(
+                    onClick = { gameStarted = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = "START")
+                }
+            } else {
+                Button(
+                    onClick = {
+                        bullets = bullets + Bullet(
+                            x = playerX,
+                            y = playerY - 40f
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text(text = "FIRE")
                 }
             }
         }
     }
 }
-
 
 // Función auxiliar fuera del composable principal
 fun createEnemyFormation(): List<Enemy> {
