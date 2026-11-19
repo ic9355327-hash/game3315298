@@ -389,7 +389,6 @@ fun GameScreen() {
         }
     }
 }
-
 // Función auxiliar fuera del composable principal
 fun createEnemyFormation(): List<Enemy> {
     return listOf(
