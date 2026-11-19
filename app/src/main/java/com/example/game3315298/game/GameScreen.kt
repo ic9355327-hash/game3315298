@@ -35,7 +35,17 @@ import kotlin.math.abs
 
 // Definición de las clases de datos
 data class Enemy(val x: Float, val y: Float)
-data class Bullet(val x: Float, val y: Float)
+data class Bullet(val x: Float, val y: Float, val color: Color)
+
+private val bulletPalette = listOf(
+    Color(0xFFFF595E), // Rojo
+    Color(0xFFFFCA3A), // Amarillo
+    Color(0xFF8AC926), // Verde
+    Color(0xFF1982C4), // Azul
+    Color(0xFF6A4C93), // Morado
+    Color(0xFFFF006E), // Rosa neón
+    Color(0xFF00F5D4)  // Cian
+)
 
 @Composable
 fun GameScreen() {
@@ -61,12 +71,14 @@ fun GameScreen() {
 
     // Estado de los disparos
     var bullets by remember { mutableStateOf(listOf<Bullet>()) }
+    var bulletColorIndex by remember { mutableStateOf(0) }
 
     // Función para restaurar valores al reiniciar
     fun resetGame() {
         score = 0
         lives = 3
         bullets = emptyList()
+        bulletColorIndex = 0
         enemies = listOf(
             Enemy(x = screenWidth * 0.25f, y = screenHeight * 0.18f),
             Enemy(x = screenWidth * 0.50f, y = screenHeight * 0.18f),
@@ -92,7 +104,7 @@ fun GameScreen() {
     }
 
     // Movimiento horizontal y vertical de los enemigos
-    LaunchedEffect(Unit) {
+    /*LaunchedEffect(Unit) {
         while (true) {
             delay(30L)
             if (gameStarted && screenWidth > 0f && enemies.isNotEmpty()) {
@@ -116,6 +128,18 @@ fun GameScreen() {
 
                 enemies = enemies.map { enemy ->
                     enemy.copy(x = enemy.x + (speed * enemyDirection))
+                }
+            }
+        }
+    }*/
+
+    //Movimiento horizontal de los enemigos
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30L)
+            if (gameStarted && screenHeight > 0f && enemies.isNotEmpty()) {
+                enemies = enemies.map { enemy ->
+                    enemy.copy(y = enemy.y + enemySpeed)
                 }
             }
         }
@@ -173,6 +197,23 @@ fun GameScreen() {
         }
     }
 
+    fun generateEnemy(): Enemy{
+        val enemyWidth = 60f
+        val randomX = kotlin.random.Random.nextFloat() *
+                (screenWidth - enemyWidth) + enemyWidth/2f
+        return Enemy(x= randomX,y=40f)
+    }
+    LaunchedEffect(gameStarted) {
+        while (gameStarted) {
+            delay(3000L)
+            if (enemies.size <= 8 && screenWidth > 0)
+            {
+                enemies += generateEnemy()
+            }
+
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize()
             .background(Color.Black)
@@ -217,7 +258,7 @@ fun GameScreen() {
         // El título solo aparece antes de iniciar el juego
         if (!gameStarted) {
             Text(
-                text = "SPACE SHOOTER",
+                text = "Cosmic Unicorn",
                 color = Color.White,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
@@ -228,8 +269,8 @@ fun GameScreen() {
         // Mensaje de Game Over
         if (gameOver) {
             Text(
-                text = "GAME OVER",
-                color = Color.Red,
+                text = "¡TE APLASTARON LAS CAQUITAS!",
+                color = Color.Magenta,
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
@@ -319,26 +360,63 @@ fun GameScreen() {
                     color = Color(0xFFFFD700)
                 )
 
-                // Dibujar enemigos en rosado claro
+                // Dibujar enemigos como caquitas arcoíris
                 enemies.forEach { enemy ->
-                    val enemyWidth = 60f
-                    val enemyHeight = 40f
-                    val lightPink = Color(0xFFFFB6C1)
+                    val w = 60f
+                    val h = 48f
+                    val left = enemy.x - w / 2f
+                    val top = enemy.y - h / 2f
 
-                    drawRect(
-                        color = lightPink,
-                        topLeft = Offset(
-                            enemy.x - enemyWidth / 2f,
-                            enemy.y - enemyHeight / 2f
-                        ),
-                        size = Size(enemyWidth, enemyHeight)
+                    // 1. Base (Rojo y Naranja)
+                    drawOval(
+                        color = Color(0xFFFF595E), // Rojo vibrante
+                        topLeft = Offset(left, top + h * 0.55f),
+                        size = Size(w, h * 0.45f)
                     )
+
+                    // 2. Nivel medio (Amarillo y Verde)
+                    drawOval(
+                        color = Color(0xFFFFCA3A), // Amarillo
+                        topLeft = Offset(left + w * 0.12f, top + h * 0.32f),
+                        size = Size(w * 0.76f, h * 0.38f)
+                    )
+                    drawOval(
+                        color = Color(0xFF8AC926), // Verde
+                        topLeft = Offset(left + w * 0.16f, top + h * 0.28f),
+                        size = Size(w * 0.68f, h * 0.28f)
+                    )
+
+                    // 3. Nivel superior (Azul)
+                    drawOval(
+                        color = Color(0xFF1982C4), // Azul
+                        topLeft = Offset(left + w * 0.25f, top + h * 0.12f),
+                        size = Size(w * 0.50f, h * 0.30f)
+                    )
+
+                    // 4. Punta clásica (Morado)
+                    val tipPath = Path().apply {
+                        moveTo(enemy.x, top) // Punta superior
+                        lineTo(enemy.x - w * 0.16f, top + h * 0.18f)
+                        lineTo(enemy.x + w * 0.16f, top + h * 0.18f)
+                        close()
+                    }
+                    drawPath(path = tipPath, color = Color(0xFF6A4C93)) // Morado
+
+                    // 5. Ojitos para darle personalidad
+                    val eyeY = top + h * 0.52f
+                    val eyeOffsetX = w * 0.14f
+                    // Fondo blanco
+                    drawCircle(Color.White, radius = 5.5f, center = Offset(enemy.x - eyeOffsetX, eyeY))
+                    drawCircle(Color.White, radius = 5.5f, center = Offset(enemy.x + eyeOffsetX, eyeY))
+                    // Pupilas negras
+                    drawCircle(Color.Black, radius = 2.8f, center = Offset(enemy.x - eyeOffsetX, eyeY))
+                    drawCircle(Color.Black, radius = 2.8f, center = Offset(enemy.x + eyeOffsetX, eyeY))
                 }
 
                 // Dibujar disparos dentro del Canvas
                 bullets.forEach { bullet ->
                     drawRect(
-                        color = Color.Green,
+                        color = bullet.color,
                         topLeft = Offset(
                             bullet.x - 4f,
                             bullet.y - 15f
@@ -376,9 +454,12 @@ fun GameScreen() {
             } else {
                 Button(
                     onClick = {
+                        val nextColor = bulletPalette[bulletColorIndex % bulletPalette.size]
+                        bulletColorIndex++
                         bullets = bullets + Bullet(
                             x = playerX,
-                            y = playerY - 40f
+                            y = playerY - 40f,
+                            color = nextColor
                         )
                     },
                     modifier = Modifier.weight(1f)
